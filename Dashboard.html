@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task Management</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dash-body">
+
+  <header class="topbar">
+    <div class="topbar-wordmark">Task <span>Management</span></div>
+    <div class="topbar-right">
+      <span class="topbar-user">Signed in as <strong>{{ username }}</strong></span>
+      <a href="{{ url_for('logout') }}" class="btn-ghost">Log out</a>
+    </div>
+  </header>
+
+  <main class="dash-layout">
+
+    <!-- New entry card -->
+    <section class="entry-card">
+      <h2 class="entry-title">New entry</h2>
+      <p class="entry-sub">task_id is assigned automatically</p>
+
+      <form id="taskForm" class="entry-form">
+        <label class="field">
+          <span class="field-label">Employee name</span>
+          <select id="employeeSelect" required>
+            <option value="" disabled selected>Loading…</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Task title</span>
+          <input type="text" id="taskTitle" placeholder="e.g. Prepare Q3 report" required>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Completed</span>
+          <select id="completedSelect">
+            <option value="false" selected>false</option>
+            <option value="true">true</option>
+          </select>
+        </label>
+
+        <button type="submit" class="btn-brass" id="addBtn"><span>Submit</span></button>
+      </form>
+    </section>
+
+    <!-- Ledger of tasks -->
+    <section class="ledger-card">
+      <div class="ledger-head-row">
+        <h2 class="entry-title">Ledger</h2>
+        <span class="ledger-count" id="taskCount">0 tasks</span>
+      </div>
+
+      <div class="ledger-table-wrap">
+        <table class="ledger-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Employee</th>
+              <th>Task title</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="taskBody">
+            <!-- rows injected by script.js -->
+          </tbody>
+        </table>
+        <p class="empty-state" id="emptyState" hidden>No tasks yet — add the first one above.</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="stamp-wrap" id="miniStampWrap" aria-hidden="true">
+    <div class="stamp stamp--small" id="miniStamp">DONE</div>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <script>
+    const employeeSelect = document.getElementById('employeeSelect');
+    const taskForm = document.getElementById('taskForm');
+    const taskBody = document.getElementById('taskBody');
+    const taskCount = document.getElementById('taskCount');
+    const emptyState = document.getElementById('emptyState');
+    const addBtn = document.getElementById('addBtn');
+
+    async function loadEmployees() {
+      const res = await fetch('/api/employees');
+      const employees = await res.json();
+      employeeSelect.innerHTML = '<option value="" disabled selected>Select employee…</option>' +
+        employees.map(e => `<option value="${e.employee_id}">${e.employee_name}</option>`).join('');
+    }
+
+    function statusChip(completed, taskId) {
+      const isDone = completed === 'true';
+      return `<button class="chip ${isDone ? 'chip--done' : 'chip--pending'}" data-id="${taskId}" data-completed="${completed}">
+                ${isDone ? 'DONE' : 'PENDING'}
+              </button>`;
+    }
+
+    function renderRow(task) {
+      const tr = document.createElement('tr');
+      tr.dataset.id = task.task_id;
+      tr.className = 'ledger-row row-enter';
+      tr.innerHTML = `
+        <td class="mono">#${String(task.task_id).padStart(4, '0')}</td>
+        <td>${task.employee_name}</td>
+        <td>${task.task_title}</td>
+        <td>${statusChip(task.completed, task.task_id)}</td>
+        <td><button class="icon-btn" data-del="${task.task_id}" title="Delete">✕</button></td>
+      `;
+      return tr;
+    }
+
+    function updateCount() {
+      const rows = taskBody.querySelectorAll('tr').length;
+      taskCount.textContent = `${rows} task${rows === 1 ? '' : 's'}`;
+      emptyState.hidden = rows !== 0;
+    }
+
+    async function loadTasks() {
+      const res = await fetch('/api/tasks');
+      const tasks = await res.json();
+      taskBody.innerHTML = '';
+      tasks.forEach(t => taskBody.appendChild(renderRow(t)));
+      updateCount();
+    }
+
+    taskForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      addBtn.disabled = true;
+      addBtn.classList.add('is-loading');
+
+      const payload = {
+        employee_id: employeeSelect.value,
+        task_title: document.getElementById('taskTitle').value.trim(),
+        completed: document.getElementById('completedSelect').value,
+      };
+
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const row = renderRow({
+          task_id: data.task_id,
+          employee_name: employeeSelect.options[employeeSelect.selectedIndex].text,
+          task_title: payload.task_title,
+          completed: payload.completed,
+        });
+        taskBody.prepend(row);
+        updateCount();
+        taskForm.reset();
+        document.getElementById('completedSelect').value = 'false';
+      } else {
+        alert('Could not save the task. Check the server / database connection.');
+      }
+      addBtn.disabled = false;
+      addBtn.classList.remove('is-loading');
+    });
+
+    // Toggle status (with the "DONE" stamp animation) or delete a row
+    taskBody.addEventListener('click', async (e) => {
+      const chip = e.target.closest('.chip');
+      const delBtn = e.target.closest('[data-del]');
+
+      if (chip) {
+        const id = chip.dataset.id;
+        const nowCompleted = chip.dataset.completed === 'true' ? 'false' : 'true';
+        const res = await fetch(`/api/tasks/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completed: nowCompleted }),
+        });
+        if (res.ok) {
+          chip.dataset.completed = nowCompleted;
+          chip.textContent = nowCompleted === 'true' ? 'DONE' : 'PENDING';
+          chip.classList.toggle('chip--done', nowCompleted === 'true');
+          chip.classList.toggle('chip--pending', nowCompleted === 'false');
+          if (nowCompleted === 'true') fireMiniStamp(chip);
+        }
+      }
+
+      if (delBtn) {
+        const id = delBtn.dataset.del;
+        const row = delBtn.closest('tr');
+        row.classList.add('row-exit');
+        const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        setTimeout(() => {
+          if (res.ok) row.remove();
+          updateCount();
+        }, 260);
+      }
+    });
+
+    function fireMiniStamp(anchorEl) {
+      const wrap = document.getElementById('miniStampWrap');
+      const stamp = document.getElementById('miniStamp');
+      const rect = anchorEl.getBoundingClientRect();
+      wrap.style.left = `${rect.left + rect.width / 2}px`;
+      wrap.style.top = `${rect.top + rect.height / 2}px`;
+      wrap.classList.remove('is-visible');
+      stamp.classList.remove('is-stamped');
+      // force reflow so the animation can retrigger
+      void stamp.offsetWidth;
+      wrap.classList.add('is-visible');
+      stamp.classList.add('is-stamped');
+      setTimeout(() => wrap.classList.remove('is-visible'), 700);
+    }
+
+    loadEmployees();
+    loadTasks();
+  </script>
+</body>
+</html>
