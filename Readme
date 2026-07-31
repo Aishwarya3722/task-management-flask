@@ -1,0 +1,96 @@
+# Task Management System
+
+A small Flask + MySQL app matching your sketch: an admin login page that
+navigates into a Task Management screen. Python is the middleware between
+the frontend and MySQL — no ORM, plain SQL, so it's easy to read and modify.
+
+## Structure
+
+```
+task_app/
+├── app.py              # Flask middleware: routes + all SQL queries
+├── schema.sql          # Creates the database and 3 tables
+├── requirements.txt
+├── templates/
+│   ├── login.html       # Admin login (stamp animation on success)
+│   └── dashboard.html   # Task management screen
+└── static/
+    ├── style.css        # All styling + animations
+    └── script.js
+```
+
+## Database design
+
+Three tables, as requested (2 for login/tasks + employees for the FK):
+
+1. **admin_login** — `admin_id` (PK), `username`, `password_hash`
+2. **employees** — `employee_id` (PK), `employee_name`
+3. **task_management** — `task_id` (PK, auto_increment), `employee_id` (FK →
+   employees), `task_title`, `completed` (`'true'`/`'false'`), `created_at`
+
+`task_management.employee_id` has a foreign key to `employees.employee_id`,
+so every task is tied to a real employee — exactly like the "Employee name"
+field in your wireframe.
+
+## Setup
+
+1. **Install dependencies**
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. **Create the database** (edit MySQL host/user/password as needed)
+   ```
+   mysql -u root -p < schema.sql
+   ```
+   This creates the `task_management` database, all 3 tables, a seed admin
+   user, and 3 sample employees.
+
+3. **Configure the connection** — open `app.py` and edit `DB_CONFIG` near the
+   top with your MySQL host/user/password.
+
+4. **Run the app**
+   ```
+   python app.py
+   ```
+   Visit `http://localhost:5000`.
+
+## Default login
+
+- Username: `admin`
+- Password: `admin123`
+
+Change this (or add more admins) by inserting new rows into `admin_login`
+with a `werkzeug.security.generate_password_hash(...)` value — never store
+plain-text passwords.
+
+## How it works
+
+- **Login** → `POST /login` checks the submitted password against the
+  hashed one in `admin_login` using `check_password_hash`. On success it
+  starts a Flask session and the page plays a stamp animation before
+  redirecting to `/dashboard` (this is the arrow → Admin login on your
+  sketch).
+- **Dashboard** (`/dashboard`) is protected by a `login_required` decorator —
+  visiting it without logging in bounces you back to `/login`.
+- **Manually adding tasks**: the "New entry" form on the dashboard posts to
+  `POST /api/tasks`. You pick an employee from a dropdown (populated from
+  the `employees` table via `GET /api/employees`), type a task title, and
+  choose `completed: true/false` — exactly like the two dropdowns in your
+  sketch.
+- Clicking a task's status chip toggles `completed` via `PUT /api/tasks/<id>`
+  and plays a small "DONE" stamp. The ✕ button removes a row via
+  `DELETE /api/tasks/<id>`.
+- All of this is plain SQL executed from Python (`app.py`) using
+  `mysql-connector-python` — that's the "Python as middleware" layer
+  connecting your HTML/CSS/JS frontend to MySQL.
+
+## Adding employees
+
+The dropdown reads from the `employees` table. To add more, either insert
+rows directly in MySQL:
+```sql
+INSERT INTO employees (employee_name) VALUES ('New Person');
+```
+or ask me and I'll add a small "Manage employees" screen the same way the
+task screen works.
